@@ -1,0 +1,61 @@
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+  ],
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        primaryNavy: "#07152E",
+        deepNavy: "#0B1F3A",
+        primaryBlue: "#1463F3",
+        royalBlue: "#1463F3",
+        electricBlue: "#2583FF",
+        cyanAccent: "#22D3EE",
+        skyBlue: "#22D3EE",
+        mainBg: "#F5F8FD",
+        cardBg: "#FFFFFF",
+        primaryText: "#14213D",
+        textPrimary: "#14213D",
+        secondaryText: "#64748B",
+        textSecondary: "#64748B",
+        borderSlate: "#E3EAF5",
+        navBorder: "#E3EAF5",
+        successGreen: "#10B981",
+        successEmerald: "#10B981",
+        warningAmber: "#F59E0B",
+        dangerRed: "#EF4444",
+        errorRed: "#EF4444",
+        brand: {
+          50: "#eff6ff",
+          100: "#dbeafe",
+          200: "#bfdbfe",
+          300: "#93c5fd",
+          400: "#60a5fa",
+          500: "#1463F3",
+          600: "#1463F3",
+          700: "#0e4ac4",
+          800: "#0b3793",
+          900: "#07152E",
+          950: "#050e1f",
+        },
+        inzovate: {
+          primary: "#07152E",
+          navy: "#0B1F3A",
+          accent: "#2583FF",
+          sky: "#22D3EE",
+          gold: "#F59E0B",
+          dark: "#07152E",
+          cardDark: "#0B1F3A",
+        }
+      },
+      fontFamily: {
+        sans: ["Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"],
+      },
+    },
+  },
+  plugins: [],
+};

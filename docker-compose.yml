@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://inzovate_user:InzovateSecret2026@postgres:5432/inzovate_hrms?schema=public
+      - JWT_SECRET=inzovate-production-jwt-random-secure-secret-2026
+      - COMPANY_DOMAIN=inzovate-technologies.com
+      - SHIFT_START=09:30
+      - GRACE_END=09:45
+      - SHIFT_END=17:00
+      - APP_TIMEZONE=Asia/Kolkata
+      - APP_CURRENCY=INR
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: inzovate_user
+      POSTGRES_PASSWORD: InzovateSecret2026
+      POSTGRES_DB: inzovate_hrms
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:

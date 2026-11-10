@@ -1,0 +1,471 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  fullName      String
+  role          String   @default("EMPLOYEE") // SUPER_ADMIN, ADMIN, HR_MANAGER, TEAM_LEAD, EMPLOYEE, INTERN, STUDENT, CANDIDATE
+  avatarUrl     String?
+  department    String?
+  designation   String?
+  phone         String?
+  isActive      Boolean  @default(true)
+  emailVerified Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  employeeProfile Employee?
+  notifications   Notification[]
+  auditLogs       AuditLog[]
+}
+
+model Employee {
+  id              String   @id @default(cuid())
+  employeeId      String   @unique // e.g. INZ-EMP-1001
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName       String
+  lastName        String
+  personalEmail   String?
+  companyEmail    String   @unique
+  phone           String?
+  emergencyPhone  String?
+  department      String
+  designation     String
+  reportingToId   String?  // reporting manager employeeId
+  reportingToName String?
+  teamLeadName    String?
+  dateOfJoining   String
+  dateOfBirth     String?
+  employmentType  String   @default("Full-time") // Full-time, Probation, Contract, Intern
+  employmentStatus String  @default("Active")    // Active, Inactive, On Leave, Resigned, Terminated
+  workLocation    String   @default("Chennai / Remote")
+  confirmationDate String?
+  contractEndDate String?
+
+  // Indian statutory & banking
+  panNumber       String?
+  aadhaarNumber   String?  // masked for security
+  bankAccount     String?
+  bankIfsc        String?
+  bankName        String?
+  pfNumber        String?
+  uanNumber       String?
+  esiNumber       String?
+
+  // Salary Structure (INR)
+  basicSalary      Float    @default(0)
+  hra              Float    @default(0)
+  specialAllowance Float    @default(0)
+  conveyance       Float    @default(0)
+  grossSalary      Float    @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  attendances     Attendance[]
+  leaveRequests   LeaveRequest[]
+  leaveBalances   LeaveBalance[]
+  payslips        Payslip[]
+  documents       EmployeeDocument[]
+  performance     PerformanceReview[]
+}
+
+model Attendance {
+  id                     String    @id @default(cuid())
+  employeeId             String
+  employee               Employee  @relation(fields: [employeeId], references: [employeeId], onDelete: Cascade)
+  date                   String    // YYYY-MM-DD
+  punchInTime            DateTime?
+  punchOutTime           DateTime?
+  workedHours            Float     @default(0) // decimal hours
+  lateMinutes            Int       @default(0)
+  earlyMinutes           Int       @default(0)
+  status                 String    @default("ABSENT") // PRESENT, ABSENT, LATE, HALF_DAY, ON_LEAVE
+  punchInNotes           String?
+  punchOutNotes          String?
+  regularizationStatus   String?   // PENDING, APPROVED, REJECTED
+  regularizationReason   String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([employeeId, date])
+}
+
+model LeaveRequest {
+  id                String    @id @default(cuid())
+  employeeId        String
+  employee          Employee  @relation(fields: [employeeId], references: [employeeId], onDelete: Cascade)
+  leaveType         String    // Casual Leave, Sick Leave, Earned Leave, Maternity, Paternity, Compensatory Off, Unpaid Leave, WFH
+  startDate         String    // YYYY-MM-DD
+  endDate           String    // YYYY-MM-DD
+  totalDays         Float     @default(1)
+  reason            String
+  status            String    @default("PENDING_TL") // PENDING_TL, PENDING_HR, APPROVED, REJECTED, CANCELLED
+  
+  // Two-phase approval workflow
+  tlApprovalStatus  String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  tlComments        String?
+  tlApprovedAt      DateTime?
+  
+  hrApprovalStatus  String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  hrComments        String?
+  hrApprovedAt      DateTime?
+
+  finalDecisionBy   String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model LeaveBalance {
+  id              String   @id @default(cuid())
+  employeeId      String
+  employee        Employee @relation(fields: [employeeId], references: [employeeId], onDelete: Cascade)
+  year            Int      @default(2026)
+  casualLeave     Float    @default(12)
+  sickLeave       Float    @default(10)
+  earnedLeave     Float    @default(15)
+  maternityLeave  Float    @default(180)
+  paternityLeave  Float    @default(15)
+  unpaidLeaveUsed Float    @default(0)
+  wfhAvailable    Float    @default(24)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([employeeId, year])
+}
+
+model PayrollPeriod {
+  id             String    @id @default(cuid())
+  month          Int       // 1 - 12
+  year           Int       // 2026
+  status         String    @default("DRAFT") // DRAFT, REVIEW, APPROVED, PUBLISHED
+  processedAt    DateTime?
+  approvedBy     String?
+  totalGross     Float     @default(0)
+  totalDeductions Float    @default(0)
+  totalNet       Float     @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  payslips       Payslip[]
+  @@unique([month, year])
+}
+
+model Payslip {
+  id              String        @id @default(cuid())
+  payrollPeriodId String
+  payrollPeriod   PayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
+  employeeId      String
+  employee        Employee      @relation(fields: [employeeId], references: [employeeId], onDelete: Cascade)
+  month           Int
+  year            Int
+  workingDays     Int           @default(22)
+  paidDays        Float         @default(22)
+  unpaidDays      Float         @default(0)
+
+  // Earnings
+  basicSalary      Float        @default(0)
+  hra              Float        @default(0)
+  da               Float        @default(0)
+  specialAllowance Float        @default(0)
+  conveyance       Float        @default(0)
+  bonuses          Float        @default(0)
+  grossSalary      Float        @default(0)
+
+  // Deductions
+  employeePf       Float        @default(0)
+  employerPf       Float        @default(0)
+  esi              Float        @default(0)
+  professionalTax  Float        @default(0)
+  tds              Float        @default(0)
+  lopDeduction     Float        @default(0) // Loss of pay
+  totalDeductions  Float        @default(0)
+
+  netSalary        Float        @default(0)
+  status           String       @default("GENERATED") // GENERATED, PUBLISHED
+  generatedAt      DateTime     @default(now())
+
+  @@unique([employeeId, month, year])
+}
+
+model Internship {
+  id                   String   @id @default(cuid())
+  internId             String   @unique // INZ-INT-2026-001
+  fullName             String
+  personalEmail        String   @unique
+  phone                String
+  college              String
+  degree               String
+  graduationYear       Int
+  domain               String   // Frontend, Full Stack, AI/ML, Cloud, Cyber Security, etc.
+  batch                String   // Batch-2026-Q1
+  mentor               String   // Mentor name
+  trainerId            String?  // Assigned Employee ID (e.g. INZ-EMP-1002)
+  trainerName          String?  // Assigned Trainer Name
+  trainerEmail         String?  // Assigned Trainer Email
+  allocatedBy          String?  // HR, SUPER_ADMIN, FOUNDER, CO_FOUNDER, CMO
+  allocatedAt          DateTime?
+  startDate            String
+  endDate              String
+  durationWeeks        Int      @default(12)
+  workMode             String   @default("Remote") // Remote, Hybrid, In-office
+  internshipType       String   @default("Paid")   // Paid, Stipend, Free
+  
+  // Financial Tracking
+  totalFee             Float    @default(0)
+  discount             Float    @default(0)
+  amountPaid           Float    @default(0)
+  remainingBalance     Float    @default(0)
+  paymentStatus        String   @default("PENDING") // PENDING, PARTIAL, COMPLETED
+
+  // Learning & Completion
+  attendancePercentage Float    @default(0)
+  assignmentCompletion Float    @default(0)
+  assessmentScore      Float    @default(0)
+  projectTitle         String?
+  projectUrl           String?
+  mentorFeedback       String?
+  certificateStatus    String   @default("NOT_ELIGIBLE") // NOT_ELIGIBLE, ELIGIBLE, ISSUED
+  certificateNumber    String?
+  status               String   @default("ACTIVE") // ENROLLED, ACTIVE, COMPLETED, DROPPED
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  payments             InternshipPayment[]
+  schedules            InternDailySchedule[]
+  attendances          InternAttendance[]
+}
+
+model InternDailySchedule {
+  id                 String     @id @default(cuid())
+  internshipId       String
+  internship         Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  internId           String
+  trainerId          String?
+  trainerEmail       String?
+  date               String     // YYYY-MM-DD
+  startTime          String?    // e.g. "10:00"
+  endTime            String?    // e.g. "12:00"
+  topic              String?    // e.g. "Full Stack Next.js & React"
+  status             String     @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED, PENDING
+  reminderSent       Boolean    @default(false)
+  reminderSentAt     DateTime?
+  allocatedAt        DateTime?  @default(now())
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@unique([internId, date])
+}
+
+model InternAttendance {
+  id                 String     @id @default(cuid())
+  internshipId       String
+  internship         Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  internId           String
+  date               String     // YYYY-MM-DD
+  punchInTime        DateTime?
+  punchOutTime       DateTime?
+  workedHours        Float      @default(0)
+  status             String     @default("ABSENT") // PRESENT, ABSENT, LEAVE
+  internFeedback     String?    // Mandatory on intern punch-out: What student learned today
+  trainerFeedback    String?    // What trainer taught today
+  leaveIntimated     Boolean    @default(false)
+  leaveReason        String?
+  threeWayAlertSent  Boolean    @default(false)
+  notes              String?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@unique([internId, date])
+}
+
+model InternshipPayment {
+  id             String     @id @default(cuid())
+  internshipId   String
+  internship     Internship @relation(fields: [internshipId], references: [id], onDelete: Cascade)
+  amount         Float
+  paymentDate    String
+  paymentMode    String     // UPI, NetBanking, Card, NEFT, Cash
+  transactionRef String
+  receiptNumber  String     @unique
+  verifiedBy     String     // HR / Admin email
+  notes          String?
+  createdAt      DateTime   @default(now())
+}
+
+model Certificate {
+  id                String   @id @default(cuid())
+  certificateNumber String   @unique // INZ-CERT-2026-XXXX
+  type              String   // INTERNSHIP_COMPLETION, INTERNSHIP_OFFER, TRAINING, EMPLOYEE_OFFER, RELIEVING
+  recipientName     String
+  recipientEmail    String
+  recipientId       String   // Employee ID or Intern ID
+  domainOrDept      String
+  duration          String
+  issueDate         String
+  verificationToken String   @unique
+  qrCodeData        String
+  status            String   @default("ACTIVE") // ACTIVE, REVOKED
+  issuedBy          String
+  createdAt         DateTime @default(now())
+}
+
+model JobPosting {
+  id              String      @id @default(cuid())
+  title           String
+  department      String
+  location        String      @default("Chennai / Remote")
+  type            String      @default("Full-Time")
+  experienceLevel String      @default("1-3 years")
+  salaryRange     String      @default("₹4,00,000 - ₹7,00,000 LPA")
+  description     String
+  requirements    String
+  status          String      @default("OPEN") // OPEN, CLOSED
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  candidates      Candidate[]
+}
+
+model Candidate {
+  id              String     @id @default(cuid())
+  jobPostingId    String
+  jobPosting      JobPosting @relation(fields: [jobPostingId], references: [id], onDelete: Cascade)
+  fullName        String
+  email           String
+  phone           String
+  resumeUrl       String?
+  currentStage    String     @default("APPLIED") // APPLIED, SCREENING, SHORTLISTED, INTERVIEW_SCHEDULED, INTERVIEW_COMPLETED, SELECTED, REJECTED, OFFER_RELEASED, JOINED
+  rating          Int        @default(0) // 1 to 5
+  interviewDate   String?
+  interviewNotes  String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+model PerformanceReview {
+  id                    String   @id @default(cuid())
+  employeeId            String
+  employee              Employee @relation(fields: [employeeId], references: [employeeId], onDelete: Cascade)
+  reviewerName          String
+  reviewPeriod          String   // e.g. Q3 2026, Annual 2026
+  goalScore             Float    @default(0) // 0-100
+  competencyScore       Float    @default(0) // 0-100
+  selfComments          String?
+  managerComments       String?
+  hrComments            String?
+  finalRating           Float    @default(0) // 1.0 - 5.0
+  promotionRecommended  Boolean  @default(false)
+  createdAt             DateTime @default(now())
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  assignedTo  String   // Employee Name or ID
+  assignedBy  String
+  priority    String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status      String   @default("TODO")   // TODO, IN_PROGRESS, REVIEW, DONE
+  dueDate     String
+  project     String   @default("General Operations")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ChatMessage {
+  id          String   @id @default(cuid())
+  senderId    String
+  senderName  String
+  senderRole  String
+  channel     String   @default("ANNOUNCEMENTS") // GENERAL, ANNOUNCEMENTS, HR_OPS, TECH, DIRECT
+  receiverId  String?  // If direct message
+  message     String
+  attachments String?
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model EmployeeDocument {
+  id                 String   @id @default(cuid())
+  employeeId         String
+  employee           Employee @relation(fields: [employeeId], references: [employeeId], onDelete: Cascade)
+  category           String   // AADHAAR, PAN, DEGREE, RESUME, OFFER_LETTER, APPOINTMENT_LETTER, RELIEVING_LETTER, OTHER
+  fileName           String
+  fileUrl            String
+  verificationStatus String   @default("VERIFIED") // PENDING, VERIFIED, REJECTED
+  degreeType         String?  // UG, PG, Diploma, Doctorate
+  degreeTitle        String?  // B.E, B.Tech, M.Tech, MBA, MCA, etc.
+  expiryDate         String?
+  uploadedAt         DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   @default("SYSTEM") // ATTENDANCE, LEAVE, PAYROLL, INTERNSHIP, SYSTEM, RECRUITMENT
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userEmail String
+  action    String   // e.g. LOGIN, ATTENDANCE_PUNCH, LEAVE_APPROVED, PAYROLL_CALCULATED, CERTIFICATE_ISSUED
+  module    String   // AUTH, ATTENDANCE, LEAVE, PAYROLL, INTERNSHIP, CERTIFICATES, ADMIN
+  details   String
+  ipAddress String   @default("127.0.0.1")
+  timestamp DateTime @default(now())
+}
+
+model CompanySettings {
+  id                  String   @id @default("inzovate-settings")
+  companyName         String   @default("INZOVATE TECHNOLOGIES PRIVATE LIMITED")
+  tagline             String   @default("One Platform. Every People Operation. Intelligent Automation.")
+  businessEmailDomain String   @default("inzovate-technologies.com")
+  workStartTime       String   @default("09:30")
+  gracePeriodEndTime  String   @default("09:45")
+  workEndTime         String   @default("17:00")
+  timezone            String   @default("Asia/Kolkata")
+  currency            String   @default("INR")
+  smtpHost            String   @default("smtp.inzovate-technologies.com")
+  smtpPort            Int      @default(587)
+  smtpUser            String   @default("hr@inzovate-technologies.com")
+  smtpPass            String?
+  smtpFrom            String   @default("Inzovate HRMS <hr@inzovate-technologies.com>")
+  smtpSecure          Boolean  @default(true)
+  aiApiKeyConfigured  Boolean  @default(true)
+  theme               String   @default("light")
+  updatedAt           DateTime @updatedAt
+}
+
+model RolePermission {
+  id          String   @id @default(cuid())
+  role        String   @unique // SUPER_ADMIN, HR_MANAGER, EMPLOYEE, INTERN
+  title       String
+  description String
+  modules     String   // JSON string of module keys e.g. ["dashboard","employees","attendance","leaves","payroll","org-chart","tasks","reports","settings","internship","recruitment","certificates"]
+  canApprove  Boolean  @default(false)
+  canEdit     Boolean  @default(false)
+  canDelete   Boolean  @default(false)
+  canExport   Boolean  @default(false)
+  isLocked    Boolean  @default(false)
+  updatedBy   String?
+  updatedAt   DateTime @updatedAt
+}

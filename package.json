@@ -1,0 +1,44 @@
+{
+  "name": "inzovate-hrms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Inzovate AI HRMS — Enterprise People Operations & Intelligent Automation Platform",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:seed": "node --loader ts-node/esm prisma/seed.ts",
+    "test": "node --test tests/attendance.test.js tests/auth_rbac.test.js tests/payroll.test.js tests/hrms_comprehensive.test.js tests/cmo_marimuthu.test.js tests/internship_attendance_automation.test.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.21.1",
+    "bcryptjs": "^2.4.3",
+    "date-fns": "^4.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "jspdf": "^2.5.2",
+    "lucide-react": "^0.453.0",
+    "next": "^14.2.15",
+    "nodemailer": "^10.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "semver": "^7.8.5",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^20.17.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "prisma": "^5.21.1",
+    "tailwindcss": "^3.4.14",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}

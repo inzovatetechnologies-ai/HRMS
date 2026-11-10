@@ -1,0 +1,27 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Next.js build output
+/.next/
+/out/
+/build
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Environment files (keep .env.example, ignore private secrets if needed)
+.env*.local
+
+# SQLite temporary journal files
+*.db-journal
+*.db-shm
+*.db-wal
+
+# OS metadata
+.DS_Store
+Thumbs.db

@@ -1,0 +1,154 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --primary-navy: #07152E;
+    --deep-navy: #0B1F3A;
+    --primary-blue: #1463F3;
+    --electric-blue: #2583FF;
+    --cyan-accent: #22D3EE;
+    --main-bg: #F5F8FD;
+    --card-bg: #FFFFFF;
+    --primary-text: #14213D;
+    --secondary-text: #64748B;
+    --nav-border: #E3EAF5;
+  }
+
+  body {
+    color: #14213D;
+    background-color: #F5F8FD;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  .dark body {
+    color: #F8FAFC;
+    background-color: #07152E;
+  }
+}
+
+/* Luxury scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Dark mode luxury sidebar scrollbar */
+.dark-sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+.dark-sidebar::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.4);
+}
+.dark-sidebar::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 9999px;
+}
+.dark-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Glowing card effect */
+.glow-card {
+  position: relative;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glow-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px -10px rgba(15, 23, 42, 0.1), 0 4px 10px -2px rgba(15, 23, 42, 0.05);
+}
+
+/* Glassmorphism */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.glass-panel-dark {
+  background: rgba(11, 15, 25, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(30, 41, 59, 0.7);
+}
+
+/* Live beacon animation */
+@keyframes beaconPulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.beacon-pulse {
+  animation: beaconPulse 2s infinite;
+}
+
+/* Shimmer effect for premium buttons */
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+.shimmer-btn {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer-btn::after {
+  content: "";
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(90deg, rgba(255,255,255,0) 0, rgba(255,255,255,0.2) 20%, rgba(255,255,255,0.5) 60%, rgba(255,255,255,0));
+  animation: shimmer 3s infinite;
+}
+
+/* Subtle glow for sidebar active items */
+.sidebar-active-glow {
+  box-shadow: 0 0 20px -3px rgba(37, 99, 235, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* Subtle radial gradient background */
+.sidebar-bg {
+  background: linear-gradient(180deg, #070B14 0%, #0A1020 50%, #060911 100%);
+}
+
+/* Cyber Enterprise Grid & Glows */
+.cyber-grid {
+  background-image: 
+    linear-gradient(to right, rgba(37, 139, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(37, 139, 255, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.cyber-dots {
+  background-image: radial-gradient(rgba(54, 214, 255, 0.12) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-5px); }
+}
+
+.animate-float-slow {
+  animation: floatSlow 5s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: floatSlow 6s ease-in-out 2.5s infinite;
+}
+
