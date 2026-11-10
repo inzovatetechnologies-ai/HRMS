@@ -37,6 +37,10 @@ import {
   BookOpen,
   MessageSquare,
   UserCheck,
+  Eye,
+  FileSpreadsheet,
+  Search,
+  X,
 } from "lucide-react";
 
 export default function AttendancePage() {
@@ -54,6 +58,28 @@ export default function AttendancePage() {
   const [internsList, setInternsList] = useState<any[]>([]);
   const [internAttendances, setInternAttendances] = useState<any[]>([]);
   const [internSchedules, setInternSchedules] = useState<any[]>([]);
+
+  // Intern Historical & Dossier States
+  const [internFilterMode, setInternFilterMode] = useState<"TODAY" | "DATE" | "ALL">("TODAY");
+  const [selectedInternDate, setSelectedInternDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [selectedInternStudentFilter, setSelectedInternStudentFilter] = useState<string>("ALL");
+  const [selectedInternDomainFilter, setSelectedInternDomainFilter] = useState<string>("ALL");
+  const [selectedInternStatusFilter, setSelectedInternStatusFilter] = useState<string>("ALL");
+  const [internSearchQuery, setInternSearchQuery] = useState<string>("");
+  const [historicalInternAttendances, setHistoricalInternAttendances] = useState<any[]>([]);
+  const [isHistoricalLoading, setIsHistoricalLoading] = useState<boolean>(false);
+  const [internSummaryMetrics, setInternSummaryMetrics] = useState<{
+    presentCount: number;
+    absentCount: number;
+    leaveCount: number;
+    totalHours: number;
+  }>({ presentCount: 0, absentCount: 0, leaveCount: 0, totalHours: 0 });
+
+  // Individual Intern Dossier Modal
+  const [internDossierModalOpen, setInternDossierModalOpen] = useState<boolean>(false);
+  const [selectedInternForDossier, setSelectedInternForDossier] = useState<any | null>(null);
+  const [internDossierRecords, setInternDossierRecords] = useState<any[]>([]);
+  const [isInternDossierLoading, setIsInternDossierLoading] = useState<boolean>(false);
 
   // Intern Feedback Modal State (Mandatory on punch out)
   const [internFeedbackModalOpen, setInternFeedbackModalOpen] = useState(false);
@@ -244,6 +270,88 @@ export default function AttendancePage() {
     }
     loadInternAttendanceData();
   };
+
+  const loadHistoricalInternAttendance = async (
+    mode = internFilterMode,
+    dateStr = selectedInternDate,
+    studentId = selectedInternStudentFilter
+  ) => {
+    setIsHistoricalLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (mode === "ALL") {
+        params.set("all", "true");
+      } else if (mode === "DATE" && dateStr) {
+        params.set("date", dateStr);
+      } else {
+        params.set("date", new Date().toISOString().split("T")[0]);
+      }
+
+      if (studentId && studentId !== "ALL") {
+        params.set("internId", studentId);
+      }
+
+      const res = await fetch(`/api/internship/attendance?${params.toString()}`);
+      const data = await res.json();
+      if (data.success) {
+        setHistoricalInternAttendances(data.attendances || []);
+        if (data.summary) {
+          setInternSummaryMetrics(data.summary);
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to load historical intern attendance:", err);
+    } finally {
+      setIsHistoricalLoading(false);
+    }
+  };
+
+  const openInternDossier = async (intern: any) => {
+    setSelectedInternForDossier(intern);
+    setInternDossierModalOpen(true);
+    setIsInternDossierLoading(true);
+    try {
+      const res = await fetch(`/api/internship/attendance?internId=${intern.internId}&all=true`);
+      const data = await res.json();
+      if (data.success) {
+        setInternDossierRecords(data.attendances || []);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch intern dossier:", err);
+    } finally {
+      setIsInternDossierLoading(false);
+    }
+  };
+
+  const handleExportInternAttendance = (format: "excel" | "pdf" | "csv", specificInternId?: string) => {
+    const params = new URLSearchParams();
+    params.set("format", format);
+
+    if (specificInternId) {
+      params.set("internId", specificInternId);
+      params.set("all", "true");
+    } else {
+      if (internFilterMode === "ALL") {
+        params.set("all", "true");
+      } else if (internFilterMode === "DATE" && selectedInternDate) {
+        params.set("date", selectedInternDate);
+      } else {
+        params.set("date", new Date().toISOString().split("T")[0]);
+      }
+
+      if (selectedInternStudentFilter && selectedInternStudentFilter !== "ALL") {
+        params.set("internId", selectedInternStudentFilter);
+      }
+    }
+
+    window.open(`/api/internship/attendance/export?${params.toString()}`, "_blank");
+  };
+
+  useEffect(() => {
+    if (attendanceView === "INTERNS") {
+      loadHistoricalInternAttendance(internFilterMode, selectedInternDate, selectedInternStudentFilter);
+    }
+  }, [attendanceView, internFilterMode, selectedInternDate, selectedInternStudentFilter]);
 
   // Handler: Intern Punch In
   const handleInternPunchIn = async (intern: any) => {
@@ -507,6 +615,47 @@ export default function AttendancePage() {
     return r.status === statusFilter;
   });
 
+  // Domains list for intern filter
+  const internDomains = Array.from(new Set(internsList.map((i) => i.domain).filter(Boolean)));
+
+  // Filtered interns for TODAY mode
+  const filteredTodayInterns = internsList.filter((intern) => {
+    if (selectedInternStudentFilter !== "ALL" && intern.internId !== selectedInternStudentFilter) return false;
+    if (selectedInternDomainFilter !== "ALL" && intern.domain !== selectedInternDomainFilter) return false;
+    if (internSearchQuery.trim()) {
+      const q = internSearchQuery.toLowerCase();
+      const matchName = intern.fullName?.toLowerCase().includes(q);
+      const matchId = intern.internId?.toLowerCase().includes(q);
+      const matchEmail = intern.personalEmail?.toLowerCase().includes(q);
+      if (!matchName && !matchId && !matchEmail) return false;
+    }
+    if (selectedInternStatusFilter !== "ALL") {
+      const todayStr = new Date().toISOString().split("T")[0];
+      const todayAtt = internAttendances.find(
+        (a: any) => (a.internId === intern.internId || a.internId === intern.id) && a.date === todayStr
+      );
+      if (selectedInternStatusFilter === "PRESENT" && todayAtt?.status !== "PRESENT") return false;
+      if (selectedInternStatusFilter === "ABSENT" && todayAtt?.status !== "ABSENT") return false;
+      if (selectedInternStatusFilter === "LEAVE" && todayAtt?.status !== "ON_LEAVE" && todayAtt?.status !== "LEAVE") return false;
+    }
+    return true;
+  });
+
+  // Filtered historical records for ALL / DATE mode
+  const filteredHistoricalRecords = historicalInternAttendances.filter((rec) => {
+    if (selectedInternStudentFilter !== "ALL" && rec.internId !== selectedInternStudentFilter) return false;
+    if (selectedInternDomainFilter !== "ALL" && rec.internship?.domain !== selectedInternDomainFilter) return false;
+    if (selectedInternStatusFilter !== "ALL" && rec.status !== selectedInternStatusFilter) return false;
+    if (internSearchQuery.trim()) {
+      const q = internSearchQuery.toLowerCase();
+      const matchName = rec.internship?.fullName?.toLowerCase().includes(q);
+      const matchId = rec.internId?.toLowerCase().includes(q);
+      const matchDate = rec.date?.toLowerCase().includes(q);
+      if (!matchName && !matchId && !matchDate) return false;
+    }
+    return true;
+  });
+
   return (
     <AppLayout>
       <div className="space-y-8 animate-fadeIn max-w-7xl mx-auto pb-16">
@@ -669,12 +818,32 @@ export default function AttendancePage() {
           </div>
 
           {attendanceView === "INTERNS" && (
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleExportInternAttendance("pdf")}
+                className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-sm transition active:scale-95"
+                title="Export Official PDF Attendance Dossier"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export PDF</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleExportInternAttendance("excel")}
+                className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm transition active:scale-95"
+                title="Export Full Attendance Sheet as Excel (.xlsx)"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Export Excel (.xlsx)</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleTriggerInternAbsenteeScan}
                 disabled={isCheckingInternAbsentee}
-                className="inline-flex items-center space-x-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold text-xs shadow-sm transition active:scale-95 disabled:opacity-50"
+                className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold text-xs shadow-sm transition active:scale-95 disabled:opacity-50"
                 title="Runs absentee scan for ended classes & sends 3-way notice to Student, Trainer, and HR"
               >
                 {isCheckingInternAbsentee ? (
@@ -682,13 +851,16 @@ export default function AttendancePage() {
                 ) : (
                   <AlertCircle className="w-4 h-4" />
                 )}
-                <span>Run 3-Way Absent Scan</span>
+                <span>3-Way Absent Scan</span>
               </button>
 
               <button
                 type="button"
-                onClick={loadInternAttendanceData}
-                className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition shadow-2xs"
+                onClick={() => {
+                  loadInternAttendanceData();
+                  loadHistoricalInternAttendance();
+                }}
+                className="p-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition shadow-2xs"
                 title="Refresh Intern Data"
               >
                 <Activity className="w-4 h-4" />
@@ -1308,252 +1480,561 @@ export default function AttendancePage() {
               </div>
             </div>
 
-            {/* Intern Candidates Attendance Register Table */}
+            {/* Intern Candidates Attendance Register & Historical Ledger Table */}
             <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
-              <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              {/* Header with Title and Mode Switcher */}
+              <div className="p-6 border-b border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                  <h3 className="font-extrabold text-sm text-slate-900">Intern Daily Class Attendance &amp; Learning Audit</h3>
-                  <p className="text-[11px] text-slate-400">Class shift punch telemetry, daily learning logs, trainer teaching notes, and leave records</p>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="font-black text-base text-slate-900 tracking-tight">
+                      Intern Class Attendance &amp; Historical Dossier
+                    </h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+                      {internFilterMode === "TODAY" ? "Live Today" : internFilterMode === "DATE" ? `Date: ${selectedInternDate}` : "All Records"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Live punch telemetry, past day audit, individual student history dossiers, and Excel/PDF export suites
+                  </p>
                 </div>
-                <span className="text-xs font-mono font-bold px-3 py-1 rounded-xl bg-slate-100 text-slate-600 border border-slate-200">
-                  Date: {new Date().toISOString().split("T")[0]}
-                </span>
+
+                {/* Interactive Mode Switcher & Export */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setInternFilterMode("TODAY")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                        internFilterMode === "TODAY"
+                          ? "bg-white text-slate-900 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-900"
+                      }`}
+                    >
+                      Live Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInternFilterMode("DATE")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                        internFilterMode === "DATE"
+                          ? "bg-white text-slate-900 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-900"
+                      }`}
+                    >
+                      Specific Date
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInternFilterMode("ALL")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                        internFilterMode === "ALL"
+                          ? "bg-white text-slate-900 shadow-2xs"
+                          : "text-slate-500 hover:text-slate-900"
+                      }`}
+                    >
+                      All Historical Records
+                    </button>
+                  </div>
+
+                  {internFilterMode === "DATE" && (
+                    <input
+                      type="date"
+                      value={selectedInternDate}
+                      onChange={(e) => setSelectedInternDate(e.target.value)}
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  )}
+
+                  {/* Export Master Buttons right on table card */}
+                  <div className="flex items-center space-x-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleExportInternAttendance("excel")}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm transition inline-flex items-center space-x-1 active:scale-95"
+                      title="Export Current Attendance Sheet as Excel (.xlsx)"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>Export Excel</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExportInternAttendance("pdf")}
+                      className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-sm transition inline-flex items-center space-x-1 active:scale-95"
+                      title="Export Current Attendance Dossier as PDF"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export PDF</span>
+                    </button>
+                  </div>
+                </div>
               </div>
 
+              {/* 4-Way Filter Controls */}
+              <div className="p-4 bg-slate-50/70 border-b border-slate-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                {/* Search */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={internSearchQuery}
+                    onChange={(e) => setInternSearchQuery(e.target.value)}
+                    placeholder="Search intern name, ID, or email..."
+                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                  />
+                  {internSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setInternSearchQuery("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Student Dropdown */}
+                <div>
+                  <select
+                    value={selectedInternStudentFilter}
+                    onChange={(e) => setSelectedInternStudentFilter(e.target.value)}
+                    className="w-full p-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-medium"
+                  >
+                    <option value="ALL">All Intern Students ({internsList.length})</option>
+                    {internsList.map((i) => (
+                      <option key={i.internId} value={i.internId}>
+                        {i.fullName} ({i.internId})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Domain Dropdown */}
+                <div>
+                  <select
+                    value={selectedInternDomainFilter}
+                    onChange={(e) => setSelectedInternDomainFilter(e.target.value)}
+                    className="w-full p-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-medium"
+                  >
+                    <option value="ALL">All Domains ({internDomains.length})</option>
+                    {internDomains.map((d: any) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Status Dropdown */}
+                <div>
+                  <select
+                    value={selectedInternStatusFilter}
+                    onChange={(e) => setSelectedInternStatusFilter(e.target.value)}
+                    className="w-full p-2 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-medium"
+                  >
+                    <option value="ALL">All Attendance Statuses</option>
+                    <option value="PRESENT">Present Only</option>
+                    <option value="ABSENT">Absent Only</option>
+                    <option value="LEAVE">Leave Only</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Summary KPI Strip */}
+              <div className="px-6 py-3.5 bg-slate-50 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex flex-wrap items-center gap-4">
+                  <span className="font-bold text-slate-700">
+                    Audit Metrics:
+                  </span>
+                  <span className="inline-flex items-center space-x-1 font-mono text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                    <span>Present: {internFilterMode === "TODAY" ? filteredTodayInterns.filter(i => { const a = internAttendances.find((att: any) => att.internId === i.internId && att.date === new Date().toISOString().split("T")[0]); return a?.status === "PRESENT" || a?.punchInTime; }).length : internSummaryMetrics.presentCount}</span>
+                  </span>
+                  <span className="inline-flex items-center space-x-1 font-mono text-rose-700 font-bold bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                    <span>Absent: {internFilterMode === "TODAY" ? filteredTodayInterns.filter(i => { const a = internAttendances.find((att: any) => att.internId === i.internId && att.date === new Date().toISOString().split("T")[0]); return a?.status === "ABSENT"; }).length : internSummaryMetrics.absentCount}</span>
+                  </span>
+                  <span className="inline-flex items-center space-x-1 font-mono text-amber-700 font-bold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                    <span>Leave: {internFilterMode === "TODAY" ? filteredTodayInterns.filter(i => { const a = internAttendances.find((att: any) => att.internId === i.internId && att.date === new Date().toISOString().split("T")[0]); return a?.status === "ON_LEAVE" || a?.status === "LEAVE"; }).length : internSummaryMetrics.leaveCount}</span>
+                  </span>
+                  <span className="inline-flex items-center space-x-1 font-mono text-blue-700 font-bold bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                    <span>Total Hours: {internSummaryMetrics.totalHours.toFixed(1)} hrs</span>
+                  </span>
+                </div>
+
+                <div className="text-[11px] text-slate-400">
+                  Click <strong className="text-cyan-700 font-bold">&quot;Dossier&quot;</strong> on any row to view &amp; export that student&apos;s full daily attendance sheet.
+                </div>
+              </div>
+
+              {/* Table Body */}
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50/80 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
-                    <tr>
-                      <th className="px-5 py-3.5">Intern Candidate</th>
-                      <th className="px-5 py-3.5">Assigned Trainer</th>
-                      <th className="px-5 py-3.5">Class Schedule</th>
-                      <th className="px-5 py-3.5">Punch In / Out</th>
-                      <th className="px-5 py-3.5">Status</th>
-                      <th className="px-5 py-3.5">What Intern Learned (Mandatory)</th>
-                      <th className="px-5 py-3.5">Trainer Teaching Notes</th>
-                      <th className="px-5 py-3.5 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {internsList.length === 0 ? (
+                {internFilterMode === "TODAY" ? (
+                  /* LIVE TODAY TABLE */
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50/80 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
                       <tr>
-                        <td colSpan={8} className="px-5 py-12 text-center text-slate-400 font-medium">
-                          No enrolled intern candidates found.
-                        </td>
+                        <th className="px-5 py-3.5">Intern Candidate</th>
+                        <th className="px-5 py-3.5">Assigned Trainer</th>
+                        <th className="px-5 py-3.5">Class Schedule</th>
+                        <th className="px-5 py-3.5">Punch In / Out</th>
+                        <th className="px-5 py-3.5">Status</th>
+                        <th className="px-5 py-3.5">What Intern Learned (Mandatory)</th>
+                        <th className="px-5 py-3.5">Trainer Teaching Notes</th>
+                        <th className="px-5 py-3.5 text-right">Actions &amp; Dossier</th>
                       </tr>
-                    ) : (
-                      internsList.map((intern: any) => {
-                        const todayStr = new Date().toISOString().split("T")[0];
-                        const todayAtt = internAttendances.find(
-                          (a: any) => (a.internId === intern.internId || a.internId === intern.id) && a.date === todayStr
-                        );
-                        const todaySch = internSchedules.find(
-                          (s: any) => (s.internId === intern.internId || s.internId === intern.id) && s.date === todayStr
-                        );
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredTodayInterns.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="px-5 py-12 text-center text-slate-400 font-medium">
+                            No matching intern candidates found.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredTodayInterns.map((intern: any) => {
+                          const todayStr = new Date().toISOString().split("T")[0];
+                          const todayAtt = internAttendances.find(
+                            (a: any) => (a.internId === intern.internId || a.internId === intern.id) && a.date === todayStr
+                          );
+                          const todaySch = internSchedules.find(
+                            (s: any) => (s.internId === intern.internId || s.internId === intern.id) && s.date === todayStr
+                          );
 
-                        const hasPunchedIn = !!todayAtt?.punchInTime;
-                        const hasPunchedOut = !!todayAtt?.punchOutTime;
-                        const isClassInProgress = hasPunchedIn && !hasPunchedOut;
+                          const hasPunchedIn = !!todayAtt?.punchInTime;
+                          const hasPunchedOut = !!todayAtt?.punchOutTime;
+                          const isClassInProgress = hasPunchedIn && !hasPunchedOut;
 
-                        return (
-                          <tr key={intern.id} className="hover:bg-slate-50/80 transition">
-                            <td className="px-5 py-3.5">
-                              <div className="font-bold text-slate-900">{intern.fullName}</div>
-                              <div className="text-[10px] text-slate-400 font-mono">{intern.internId || intern.id}</div>
-                              <div className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-[#0066FF] border border-blue-100">
-                                {intern.domain || "Technical Intern"}
-                              </div>
-                            </td>
-
-                            <td className="px-5 py-3.5">
-                              {intern.trainerName ? (
-                                <div>
-                                  <div className="font-semibold text-slate-800 flex items-center space-x-1">
-                                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span>{intern.trainerName}</span>
-                                  </div>
-                                  <div className="text-[10px] text-slate-400">{intern.trainerEmail}</div>
+                          return (
+                            <tr key={intern.id} className="hover:bg-slate-50/80 transition">
+                              <td className="px-5 py-3.5">
+                                <div className="font-bold text-slate-900">{intern.fullName}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{intern.internId || intern.id}</div>
+                                <div className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-[#0066FF] border border-blue-100">
+                                  {intern.domain || "Technical Intern"}
                                 </div>
-                              ) : (
-                                <span className="inline-flex items-center space-x-1 text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                                  <AlertCircle className="w-3 h-3" />
-                                  <span>Unallocated</span>
-                                </span>
-                              )}
-                            </td>
+                              </td>
 
-                            <td className="px-5 py-3.5 font-mono">
-                              {todaySch ? (
-                                <div>
-                                  <div className="font-bold text-slate-800">
-                                    {todaySch.startTime} – {todaySch.endTime}
+                              <td className="px-5 py-3.5">
+                                {intern.trainerName ? (
+                                  <div>
+                                    <div className="font-semibold text-slate-800 flex items-center space-x-1">
+                                      <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>{intern.trainerName}</span>
+                                    </div>
+                                    <div className="text-[10px] text-slate-400">{intern.trainerEmail}</div>
                                   </div>
-                                  {todaySch.meetingLink && (
-                                    <a
-                                      href={todaySch.meetingLink}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-[10px] text-blue-600 hover:underline flex items-center space-x-0.5 mt-0.5"
+                                ) : (
+                                  <span className="inline-flex items-center space-x-1 text-[11px] font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                    <AlertCircle className="w-3 h-3" />
+                                    <span>Unallocated</span>
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="px-5 py-3.5 font-mono">
+                                {todaySch ? (
+                                  <div>
+                                    <div className="font-bold text-slate-800">
+                                      {todaySch.startTime} – {todaySch.endTime}
+                                    </div>
+                                    {todaySch.meetingLink && (
+                                      <a
+                                        href={todaySch.meetingLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[10px] text-blue-600 hover:underline flex items-center space-x-0.5 mt-0.5"
+                                      >
+                                        <span>Join Session</span>
+                                        <ArrowUpRight className="w-2.5 h-2.5" />
+                                      </a>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="text-slate-400 text-[11px] italic">
+                                    Pending Trainer
+                                  </div>
+                                )}
+                              </td>
+
+                              <td className="px-5 py-3.5 font-mono text-slate-700">
+                                <div>
+                                  <span className="text-slate-400">In:</span>{" "}
+                                  <span className="font-bold text-slate-900">
+                                    {todayAtt?.punchInTime
+                                      ? new Date(todayAtt.punchInTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                                      : "—"}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400">Out:</span>{" "}
+                                  <span className="font-bold text-slate-900">
+                                    {todayAtt?.punchOutTime
+                                      ? new Date(todayAtt.punchOutTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                                      : "—"}
+                                  </span>
+                                </div>
+                              </td>
+
+                              <td className="px-5 py-3.5">
+                                {todayAtt?.status === "PRESENT" ? (
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center space-x-1 w-max">
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    <span>Present</span>
+                                  </span>
+                                ) : todayAtt?.status === "ON_LEAVE" ? (
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 flex items-center space-x-1 w-max">
+                                    <Calendar className="w-3 h-3" />
+                                    <span>On Leave</span>
+                                  </span>
+                                ) : todayAtt?.status === "ABSENT" ? (
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 flex items-center space-x-1 w-max">
+                                    <XCircle className="w-3 h-3" />
+                                    <span>Absent (3-Way Sent)</span>
+                                  </span>
+                                ) : isClassInProgress ? (
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center space-x-1 w-max">
+                                    <Clock className="w-3 h-3 animate-pulse" />
+                                    <span>Class In Progress</span>
+                                  </span>
+                                ) : todaySch ? (
+                                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 w-max">
+                                    Scheduled
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 font-mono text-[11px]">—</span>
+                                )}
+                              </td>
+
+                              <td className="px-5 py-3.5 max-w-xs">
+                                {todayAtt?.internFeedback ? (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center space-x-1 text-emerald-600 text-[10px] font-bold">
+                                      <Check className="w-3 h-3" />
+                                      <span>Verified Learning Log</span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-700 italic bg-slate-50 p-2 rounded-xl border border-slate-100 line-clamp-2">
+                                      &ldquo;{todayAtt.internFeedback}&rdquo;
+                                    </div>
+                                  </div>
+                                ) : isClassInProgress ? (
+                                  <div className="text-[11px] text-amber-600 font-medium flex items-center space-x-1">
+                                    <AlertCircle className="w-3.5 h-3.5" />
+                                    <span>Mandatory on Punch-Out</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-300 font-mono text-[11px]">—</span>
+                                )}
+                              </td>
+
+                              <td className="px-5 py-3.5 max-w-xs">
+                                {todayAtt?.trainerFeedback ? (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center space-x-1 text-blue-600 text-[10px] font-bold">
+                                      <BookOpen className="w-3 h-3" />
+                                      <span>Taught Topics</span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-700 italic bg-blue-50/50 p-2 rounded-xl border border-blue-100 line-clamp-2">
+                                      &ldquo;{todayAtt.trainerFeedback}&rdquo;
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px] italic">No notes logged</span>
+                                )}
+                              </td>
+
+                              <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                                <div className="flex items-center justify-end space-x-1.5">
+                                  {/* VIEW FULL DOSSIER BUTTON */}
+                                  <button
+                                    type="button"
+                                    onClick={() => openInternDossier(intern)}
+                                    className="px-2.5 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-300 font-bold text-[10px] transition flex items-center space-x-1 shadow-2xs"
+                                    title="View & Export Student Attendance Dossier"
+                                  >
+                                    <Eye className="w-3 h-3 text-cyan-600" />
+                                    <span>Dossier</span>
+                                  </button>
+
+                                  {!hasPunchedIn && todayAtt?.status !== "ON_LEAVE" && (
+                                    <button
+                                      onClick={() => handleInternPunchIn(intern)}
+                                      disabled={isPunchingIntern}
+                                      className="px-2.5 py-1.5 rounded-xl bg-[#0066FF] hover:bg-blue-600 text-white font-bold text-[10px] shadow-2xs transition active:scale-95 disabled:opacity-50"
+                                      title="Start Class Shift"
                                     >
-                                      <span>Join Session</span>
-                                      <ArrowUpRight className="w-2.5 h-2.5" />
-                                    </a>
+                                      Clock In
+                                    </button>
+                                  )}
+
+                                  {isClassInProgress && (
+                                    <button
+                                      onClick={() => {
+                                        setSelectedInternForFeedback(intern);
+                                        setInternLearningText(todayAtt?.internFeedback || "");
+                                        setInternFeedbackModalOpen(true);
+                                      }}
+                                      disabled={isPunchingIntern}
+                                      className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-[10px] shadow-2xs transition active:scale-95 disabled:opacity-50 flex items-center space-x-1"
+                                      title="Submit mandatory learning notes and clock out"
+                                    >
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      <span>Punch Out</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    onClick={() => {
+                                      setSelectedInternForTrainer(intern);
+                                      setTrainerTeachingText(todayAtt?.trainerFeedback || "");
+                                      setTrainerTeachingModalOpen(true);
+                                    }}
+                                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition"
+                                    title="Add or update teaching notes"
+                                  >
+                                    Notes
+                                  </button>
+
+                                  {todayAtt?.status !== "ON_LEAVE" && !hasPunchedIn && (
+                                    <button
+                                      onClick={() => {
+                                        setSelectedInternForLeave(intern);
+                                        setInternLeaveModalOpen(true);
+                                      }}
+                                      className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[10px] transition"
+                                      title="Submit advance leave notice"
+                                    >
+                                      Leave
+                                    </button>
                                   )}
                                 </div>
-                              ) : (
-                                <div className="text-slate-400 text-[11px] italic">
-                                  Pending Trainer
-                                </div>
-                              )}
-                            </td>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  /* HISTORICAL / SPECIFIC DATE TABLE */
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50/80 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
+                      <tr>
+                        <th className="px-5 py-3.5">Session Date</th>
+                        <th className="px-5 py-3.5">Intern Candidate</th>
+                        <th className="px-5 py-3.5">Assigned Mentor &amp; Track</th>
+                        <th className="px-5 py-3.5">Punch In / Out (IST)</th>
+                        <th className="px-5 py-3.5">Hours Logged</th>
+                        <th className="px-5 py-3.5">Status</th>
+                        <th className="px-5 py-3.5">What Intern Learned</th>
+                        <th className="px-5 py-3.5">Trainer Teaching Notes</th>
+                        <th className="px-5 py-3.5 text-right">Dossier</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {isHistoricalLoading ? (
+                        <tr>
+                          <td colSpan={9} className="px-5 py-16 text-center text-slate-400">
+                            <Loader2 className="w-6 h-6 text-blue-500 animate-spin mx-auto mb-2" />
+                            <span>Loading historical attendance records...</span>
+                          </td>
+                        </tr>
+                      ) : filteredHistoricalRecords.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="px-5 py-12 text-center text-slate-400 font-medium">
+                            No attendance records match the selected date or filter.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredHistoricalRecords.map((record: any) => {
+                          const inFormatted = record.punchInTime
+                            ? new Date(record.punchInTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                            : "—";
+                          const outFormatted = record.punchOutTime
+                            ? new Date(record.punchOutTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                            : "—";
 
-                            <td className="px-5 py-3.5 font-mono text-slate-700">
-                              <div>
-                                <span className="text-slate-400">In:</span>{" "}
-                                <span className="font-bold text-slate-900">
-                                  {todayAtt?.punchInTime
-                                    ? new Date(todayAtt.punchInTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                                    : "—"}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-slate-400">Out:</span>{" "}
-                                <span className="font-bold text-slate-900">
-                                  {todayAtt?.punchOutTime
-                                    ? new Date(todayAtt.punchOutTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                                    : "—"}
-                                </span>
-                              </div>
-                            </td>
+                          const internMeta = record.internship || internsList.find(i => i.internId === record.internId) || {};
 
-                            <td className="px-5 py-3.5">
-                              {todayAtt?.status === "PRESENT" ? (
-                                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center space-x-1 w-max">
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  <span>Present</span>
-                                </span>
-                              ) : todayAtt?.status === "ON_LEAVE" ? (
-                                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 flex items-center space-x-1 w-max">
-                                  <Calendar className="w-3 h-3" />
-                                  <span>On Leave</span>
-                                </span>
-                              ) : todayAtt?.status === "ABSENT" ? (
-                                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 flex items-center space-x-1 w-max">
-                                  <XCircle className="w-3 h-3" />
-                                  <span>Absent (3-Way Sent)</span>
-                                </span>
-                              ) : isClassInProgress ? (
-                                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 flex items-center space-x-1 w-max">
-                                  <Clock className="w-3 h-3 animate-pulse" />
-                                  <span>Class In Progress</span>
-                                </span>
-                              ) : todaySch ? (
-                                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 w-max">
-                                  Scheduled
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 font-mono text-[11px]">—</span>
-                              )}
-                            </td>
+                          return (
+                            <tr key={record.id} className="hover:bg-slate-50/80 transition">
+                              <td className="px-5 py-3.5 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                {record.date}
+                              </td>
 
-                            <td className="px-5 py-3.5 max-w-xs">
-                              {todayAtt?.internFeedback ? (
-                                <div className="space-y-1">
-                                  <div className="flex items-center space-x-1 text-emerald-600 text-[10px] font-bold">
-                                    <Check className="w-3 h-3" />
-                                    <span>Verified Learning Log</span>
-                                  </div>
-                                  <div className="text-[11px] text-slate-700 italic bg-slate-50 p-2 rounded-xl border border-slate-100 line-clamp-2">
-                                    &ldquo;{todayAtt.internFeedback}&rdquo;
-                                  </div>
-                                </div>
-                              ) : isClassInProgress ? (
-                                <div className="text-[11px] text-amber-600 font-medium flex items-center space-x-1">
-                                  <AlertCircle className="w-3.5 h-3.5" />
-                                  <span>Mandatory on Punch-Out</span>
-                                </div>
-                              ) : (
-                                <span className="text-slate-300 font-mono text-[11px]">—</span>
-                              )}
-                            </td>
+                              <td className="px-5 py-3.5">
+                                <div className="font-bold text-slate-900">{internMeta.fullName || record.internId}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{record.internId}</div>
+                              </td>
 
-                            <td className="px-5 py-3.5 max-w-xs">
-                              {todayAtt?.trainerFeedback ? (
-                                <div className="space-y-1">
-                                  <div className="flex items-center space-x-1 text-blue-600 text-[10px] font-bold">
-                                    <BookOpen className="w-3 h-3" />
-                                    <span>Taught Topics</span>
-                                  </div>
-                                  <div className="text-[11px] text-slate-700 italic bg-blue-50/50 p-2 rounded-xl border border-blue-100 line-clamp-2">
-                                    &ldquo;{todayAtt.trainerFeedback}&rdquo;
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-slate-400 text-[11px] italic">No notes logged</span>
-                              )}
-                            </td>
+                              <td className="px-5 py-3.5">
+                                <div className="font-medium text-slate-800">{internMeta.trainerName || "Mentor"}</div>
+                                <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-50 text-[#0066FF] border border-blue-100">
+                                  {internMeta.domain || "Technical"}
+                                </span>
+                              </td>
 
-                            <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                              <div className="flex items-center justify-end space-x-1.5">
-                                {!hasPunchedIn && todayAtt?.status !== "ON_LEAVE" && (
-                                  <button
-                                    onClick={() => handleInternPunchIn(intern)}
-                                    disabled={isPunchingIntern}
-                                    className="px-2.5 py-1.5 rounded-xl bg-[#0066FF] hover:bg-blue-600 text-white font-bold text-[10px] shadow-2xs transition active:scale-95 disabled:opacity-50"
-                                    title="Start Class Shift"
-                                  >
-                                    Clock In
-                                  </button>
+                              <td className="px-5 py-3.5 font-mono text-slate-700 whitespace-nowrap">
+                                <div><span className="text-slate-400">In:</span> <span className="font-bold">{inFormatted}</span></div>
+                                <div><span className="text-slate-400">Out:</span> <span className="font-bold">{outFormatted}</span></div>
+                              </td>
+
+                              <td className="px-5 py-3.5 font-mono font-bold text-cyan-700 whitespace-nowrap">
+                                {record.workedHours > 0 ? `${record.workedHours.toFixed(2)} hrs` : "—"}
+                              </td>
+
+                              <td className="px-5 py-3.5 whitespace-nowrap">
+                                {record.status === "PRESENT" && (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    PRESENT
+                                  </span>
                                 )}
-
-                                {isClassInProgress && (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedInternForFeedback(intern);
-                                      setInternLearningText(todayAtt?.internFeedback || "");
-                                      setInternFeedbackModalOpen(true);
-                                    }}
-                                    disabled={isPunchingIntern}
-                                    className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-[10px] shadow-2xs transition active:scale-95 disabled:opacity-50 flex items-center space-x-1"
-                                    title="Submit mandatory learning notes and clock out"
-                                  >
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    <span>Punch Out &amp; Feedback</span>
-                                  </button>
+                                {record.status === "ABSENT" && (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                    ABSENT
+                                  </span>
                                 )}
+                                {record.status === "LEAVE" && (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    LEAVE
+                                  </span>
+                                )}
+                              </td>
 
+                              <td className="px-5 py-3.5 max-w-xs truncate" title={record.internFeedback || ""}>
+                                {record.internFeedback ? (
+                                  <span className="text-slate-700 italic">&ldquo;{record.internFeedback}&rdquo;</span>
+                                ) : (
+                                  <span className="text-slate-300 font-mono text-[11px]">—</span>
+                                )}
+                              </td>
+
+                              <td className="px-5 py-3.5 max-w-xs truncate" title={record.trainerFeedback || ""}>
+                                {record.trainerFeedback ? (
+                                  <span className="text-slate-600 italic">&ldquo;{record.trainerFeedback}&rdquo;</span>
+                                ) : (
+                                  <span className="text-slate-300 font-mono text-[11px]">—</span>
+                                )}
+                              </td>
+
+                              <td className="px-5 py-3.5 text-right whitespace-nowrap">
                                 <button
+                                  type="button"
                                   onClick={() => {
-                                    setSelectedInternForTrainer(intern);
-                                    setTrainerTeachingText(todayAtt?.trainerFeedback || "");
-                                    setTrainerTeachingModalOpen(true);
+                                    const targetIntern = internsList.find(i => i.internId === record.internId) || record.internship;
+                                    if (targetIntern) openInternDossier(targetIntern);
                                   }}
-                                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] transition"
-                                  title="Add or update teaching notes"
+                                  className="px-2.5 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-300 font-bold text-[10px] transition inline-flex items-center space-x-1 shadow-2xs"
+                                  title="View Full History Dossier for this Student"
                                 >
-                                  Notes
+                                  <Eye className="w-3 h-3 text-cyan-600" />
+                                  <span>Dossier</span>
                                 </button>
-
-                                {todayAtt?.status !== "ON_LEAVE" && !hasPunchedIn && (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedInternForLeave(intern);
-                                      setInternLeaveModalOpen(true);
-                                    }}
-                                    className="px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[10px] transition"
-                                    title="Submit advance leave notice"
-                                  >
-                                    Leave
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           </div>
@@ -1792,6 +2273,247 @@ export default function AttendancePage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+        {/* INDIVIDUAL INTERN ATTENDANCE DOSSIER MODAL */}
+        {internDossierModalOpen && selectedInternForDossier && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/75 backdrop-blur-md overflow-y-auto animate-fadeIn">
+            <div className="relative w-full max-w-5xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[92vh] flex flex-col">
+              {/* Modal Top Header */}
+              <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-200 bg-slate-50 flex-shrink-0">
+                <div className="flex items-center space-x-3.5">
+                  <div className="w-10 h-10 rounded-2xl bg-cyan-100 text-cyan-800 flex items-center justify-center font-bold">
+                    <UserCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <h3 className="font-black text-slate-900 text-base sm:text-lg">
+                        {selectedInternForDossier.fullName}
+                      </h3>
+                      <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-300">
+                        {selectedInternForDossier.internId}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                      <span>Domain: <strong className="text-slate-700">{selectedInternForDossier.domain}</strong></span>
+                      <span>•</span>
+                      <span>Mentor: <strong className="text-slate-700">{selectedInternForDossier.trainerName || selectedInternForDossier.mentor || "Technical Mentor"}</strong></span>
+                      <span>•</span>
+                      <span>College: <strong className="text-slate-700">{selectedInternForDossier.college || "N/A"}</strong></span>
+                      <span>•</span>
+                      <span>Joined: <strong className="text-slate-700">{selectedInternForDossier.startDate || "N/A"}</strong></span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => handleExportInternAttendance("excel", selectedInternForDossier.internId)}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-sm transition inline-flex items-center space-x-1.5 active:scale-95"
+                    title="Export Student Ledger as Excel (.xlsx)"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Export Excel</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportInternAttendance("pdf", selectedInternForDossier.internId)}
+                    className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-sm transition inline-flex items-center space-x-1.5 active:scale-95"
+                    title="Export Student Ledger as PDF Dossier"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Export PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInternDossierModalOpen(false);
+                      setSelectedInternForDossier(null);
+                    }}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 transition hover:bg-slate-100"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* KPI Strip */}
+              <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/50 flex-shrink-0">
+                {(() => {
+                  const totalSessions = internDossierRecords.length;
+                  const present = internDossierRecords.filter((r) => r.status === "PRESENT").length;
+                  const absent = internDossierRecords.filter((r) => r.status === "ABSENT").length;
+                  const leave = internDossierRecords.filter((r) => r.status === "LEAVE").length;
+                  const totalHrs = internDossierRecords.reduce((acc, r) => acc + (r.workedHours || 0), 0);
+                  const rate = totalSessions > 0 ? Math.round((present / totalSessions) * 100) : 100;
+
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                      <div className="p-3 rounded-2xl bg-white border border-slate-200 text-center">
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Days</div>
+                        <div className="text-xl font-black text-slate-900 mt-0.5">{totalSessions}</div>
+                      </div>
+                      <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-center">
+                        <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Present</div>
+                        <div className="text-xl font-black text-emerald-700 mt-0.5">{present}</div>
+                      </div>
+                      <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-center">
+                        <div className="text-[10px] font-bold text-rose-700 uppercase tracking-wider">Absent</div>
+                        <div className="text-xl font-black text-rose-700 mt-0.5">{absent}</div>
+                      </div>
+                      <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-center">
+                        <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Leave</div>
+                        <div className="text-xl font-black text-amber-700 mt-0.5">{leave}</div>
+                      </div>
+                      <div className="p-3 rounded-2xl bg-cyan-50 border border-cyan-200 text-center">
+                        <div className="text-[10px] font-bold text-cyan-700 uppercase tracking-wider">Attendance Rate</div>
+                        <div className="text-xl font-black text-cyan-700 mt-0.5">{rate}%</div>
+                      </div>
+                      <div className="p-3 rounded-2xl bg-indigo-50 border border-indigo-200 text-center">
+                        <div className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Total Practical Hrs</div>
+                        <div className="text-xl font-black text-indigo-700 mt-0.5">{totalHrs.toFixed(1)}h</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Scrollable Day-by-day Session Ledger */}
+              <div className="p-4 sm:p-5 overflow-y-auto flex-1">
+                {isInternDossierLoading ? (
+                  <div className="py-16 text-center">
+                    <Loader2 className="w-8 h-8 text-cyan-500 animate-spin mx-auto mb-2" />
+                    <p className="text-xs text-slate-500">Loading daily attendance records...</p>
+                  </div>
+                ) : internDossierRecords.length === 0 ? (
+                  <div className="py-16 text-center text-slate-400 text-xs">
+                    No attendance records found for this student.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100 text-slate-600 uppercase tracking-wider font-bold text-[10px]">
+                        <tr>
+                          <th className="py-3 px-4">Session Date</th>
+                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4">Punch In (IST)</th>
+                          <th className="py-3 px-4">Punch Out (IST)</th>
+                          <th className="py-3 px-4">Hours Logged</th>
+                          <th className="py-3 px-4">What Student Learned</th>
+                          <th className="py-3 px-4">Trainer Teaching Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {internDossierRecords.map((rec) => {
+                          const dateObj = new Date(rec.date + "T00:00:00");
+                          const dayName = isNaN(dateObj.getTime())
+                            ? ""
+                            : dateObj.toLocaleDateString("en-IN", { weekday: "short" });
+                          const inFormatted = rec.punchInTime
+                            ? new Date(rec.punchInTime).toLocaleTimeString("en-IN", {
+                                timeZone: "Asia/Kolkata",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: true,
+                              })
+                            : "-";
+                          const outFormatted = rec.punchOutTime
+                            ? new Date(rec.punchOutTime).toLocaleTimeString("en-IN", {
+                                timeZone: "Asia/Kolkata",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: true,
+                              })
+                            : "-";
+
+                          return (
+                            <tr key={rec.id} className="hover:bg-slate-50 transition">
+                              <td className="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                <span>{rec.date}</span>
+                                {dayName && (
+                                  <span className="ml-1.5 text-[10px] text-slate-500 font-sans font-normal">
+                                    ({dayName})
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 whitespace-nowrap">
+                                {rec.status === "PRESENT" && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                    PRESENT
+                                  </span>
+                                )}
+                                {rec.status === "ABSENT" && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                    ABSENT
+                                  </span>
+                                )}
+                                {rec.status === "LEAVE" && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                    LEAVE
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">
+                                {inFormatted}
+                              </td>
+                              <td className="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">
+                                {outFormatted}
+                              </td>
+                              <td className="py-3 px-4 font-mono font-bold text-cyan-600 whitespace-nowrap">
+                                {rec.workedHours > 0 ? `${rec.workedHours.toFixed(2)} hrs` : "-"}
+                              </td>
+                              <td className="py-3 px-4 text-slate-700 max-w-xs truncate" title={rec.internFeedback || ""}>
+                                {rec.internFeedback || <span className="text-slate-400 italic">Not recorded</span>}
+                              </td>
+                              <td className="py-3 px-4 text-slate-600 max-w-xs truncate" title={rec.trainerFeedback || ""}>
+                                {rec.trainerFeedback || <span className="text-slate-400 italic">Covered scheduled curriculum</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs flex-shrink-0">
+                <div className="text-[11px] text-slate-500 font-mono">
+                  Showing {internDossierRecords.length} session entries from program start
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInternDossierModalOpen(false);
+                      setSelectedInternForDossier(null);
+                    }}
+                    className="px-4 py-2 rounded-xl border border-slate-300 font-bold text-xs hover:bg-slate-100 transition text-slate-700"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportInternAttendance("excel", selectedInternForDossier.internId)}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md transition flex items-center space-x-1.5"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>Download Excel</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExportInternAttendance("pdf", selectedInternForDossier.internId)}
+                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shadow-md transition flex items-center space-x-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download PDF</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
