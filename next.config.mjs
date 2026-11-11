@@ -8,7 +8,8 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ["@prisma/client", "bcryptjs"],
     outputFileTracingIncludes: {
-      "/**": ["./prisma/dev.db"],
+      "/api/**/*": ["./prisma/dev.db"],
+      "/**/*": ["./prisma/dev.db"],
     },
   },
   webpack: (config, { isServer }) => {

@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import path from "path";
 import fs from "fs";
+import { DB_BASE64 } from "./db-bundle";
 
 declare global {
   var prisma: PrismaClient | undefined;
@@ -13,29 +14,20 @@ function resolveDatabaseUrl(): string {
   }
 
   // On Vercel / AWS Lambda, the filesystem at /var/task is read-only.
-  // We copy the bundled prisma/dev.db to /tmp/dev.db where read and write are permitted.
+  // We unpack the bundled dev.db directly into /tmp/dev.db where read and write are fully permitted.
   if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
     const tmpDbPath = path.join("/tmp", "dev.db");
 
-    if (!fs.existsSync(tmpDbPath)) {
-      const candidates = [
-        path.join(process.cwd(), "prisma", "dev.db"),
-        path.join(process.cwd(), "dev.db"),
-        path.join(__dirname, "..", "..", "prisma", "dev.db"),
-        path.join(__dirname, "prisma", "dev.db"),
-      ];
-
-      for (const candidate of candidates) {
-        if (fs.existsSync(candidate)) {
-          try {
-            fs.copyFileSync(candidate, tmpDbPath);
-            console.log(`[DB INIT] Successfully cloned dev.db from ${candidate} to ${tmpDbPath}`);
-            break;
-          } catch (err) {
-            console.warn(`[DB INIT] Failed copying database from ${candidate}:`, err);
-          }
+    try {
+      if (!fs.existsSync(tmpDbPath) || fs.statSync(tmpDbPath).size === 0) {
+        if (DB_BASE64 && DB_BASE64.length > 0) {
+          const buffer = Buffer.from(DB_BASE64, "base64");
+          fs.writeFileSync(tmpDbPath, buffer);
+          console.log(`[DB INIT] Extracted ${buffer.length} bytes from db-bundle to ${tmpDbPath}`);
         }
       }
+    } catch (err) {
+      console.error("[DB INIT] Error extracting bundled db to /tmp:", err);
     }
 
     if (fs.existsSync(tmpDbPath)) {
@@ -47,6 +39,7 @@ function resolveDatabaseUrl(): string {
   const localCandidates = [
     path.join(process.cwd(), "prisma", "dev.db"),
     path.join(process.cwd(), "dev.db"),
+    path.join("/tmp", "dev.db"),
   ];
 
   for (const candidate of localCandidates) {
