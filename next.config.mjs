@@ -7,6 +7,9 @@ const nextConfig = {
   },
   experimental: {
     serverComponentsExternalPackages: ["@prisma/client", "bcryptjs"],
+    outputFileTracingIncludes: {
+      "/**": ["./prisma/dev.db"],
+    },
   },
   webpack: (config, { isServer }) => {
     if (!isServer) {
